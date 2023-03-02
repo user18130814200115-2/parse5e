@@ -12,3 +12,11 @@ page, click `Table view` and then `Download CSV`.
 
 The file can then be streamed into the `parse5e` script for instance by running
 `cat Spells.csv | parse5e`.
+
+### Dependencies
+- Posix complient shell
+- sed
+- awk
+- grep
+- cut
+- fold

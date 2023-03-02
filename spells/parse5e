@@ -1,0 +1,86 @@
+#!/bin/sh
+
+# This script needs to be fed a csv file containing the spells as downloaded
+# from 5e.tools
+
+# The working folder also requires files to be present for each letter of the
+# alphabet containing the line "from dungeonsheets.spells.spells import Spell"
+# This can be automated with the following command in bash:
+# for i in {a..z}; do printf "from dungeonsheets.spells.spells import Spell\n\n\n" > spells_$i.py; done
+
+
+# Convert csv to tsv
+sed 's|\",\"|\"\t\"|g' | while read line
+do
+
+# Get the relevant data
+
+	# We do not want the "(UA)" tags in the name, so we remove them.
+	# The same goes for special characters
+	name=$(printf "%s" "$line" | cut -f1 |\
+		sed -e "s|\'||g" -e 's| (UA)||g')
+
+	# We do not need the ordinal indicators
+	level=$(printf "%s" "$line" | cut -f3 |\
+		sed -e 's|\"||g' -e 's|rd||g' -e 's|th||g' -e 's|nd||g' -e 's|st||g' -e 's|Cantrip|0|g')
+
+	cast=$(printf "%s" "$line" | cut -f4)
+	duration=$(printf "%s" "$line" | cut -f5)
+	school_raw=$(printf "%s" "$line" | cut -f6)
+	range=$(printf "%s" "$line" | cut -f7)
+	components_raw=$(printf "%s" "$line" | cut -f8)
+
+	# In the csv, classes and subclasses are stored separately, here we
+	# merge them
+	classes=\($(printf "%s" "$line" | cut -f9,10 |\
+		sed -e 's|, |\", \"|g' -e 's|\t|,|g' -e 's|\"\"||g' -e 's|,$||g' -e 's|^,||g')\)
+
+	# Get rid of trailing "
+	text=$(printf "%s" "$line" | cut -f11 |\
+		sed 's|\"$||g')
+
+	# Format the text in bold
+	higher=$(printf "%s" "$line" | cut -f12 |\
+		sed -e 's|^\"||g' -e 's| At Higher Levels.|**At Higher Levels:**|g')
+
+
+# Data processing
+
+	# First, we write the name in camelcase, then we remove special
+	# characters
+	formal=$(printf "%s" "$name" |\
+		awk 'BEGIN{FS=OFS=" "} {for (i=1;i<=NF;i++) {$i=toupper(substr($i,1,1)) substr($i,2)}}1' |\
+		sed -e "s|[ \'\"\)\(\/]||g" -e 's|-||g')
+
+	# Spell components are stored as a single string, the following two
+	# lines separate out the material components from the Verbal, Somatic, Material listing.
+	components=\($(printf "%s" "$components_raw" | sed -e 's| ([^)]*)||g' -e 's|, |\", \"|g')\)
+	material=\"$(printf "%s" "$components_raw" | grep -o "([^)]*)" | sed 's|[)(]||g' | tr "\n" ";")\"
+
+	# The following two lines separate out the school and the ritual tag
+	school=$(printf "%s" "$school_raw" | sed -e 's| (ritual)||g')
+	[ $(printf "%s" "$school_raw" | grep -c "(ritual)") -gt 0 ] && ritual="True" || ritual="False"
+	
+	# This is a really dirty way of getting the first letter of the spell
+	# This letter is used for the filename in which the spell will be stored.
+	letter=$(printf "%s" "$name" | cut -c2 | sed -e 'y/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz/')
+
+	# This block prints the spell and appends it to the appropriate file
+	{
+		printf "class %s(Spell):\n" "$formal"
+		# Wrap and indent the spell description
+		printf "\"\"%s\n\n" "$text" | fold -s -w 72 | sed 's|^|\t|g'
+		printf "%s\"\"" "$higher" | fold -s -w 72 | sed 's|^|\t|g'
+		printf "\n\n"
+		printf "\tname = %s\n" "$name"
+		printf "\tlevel = %s\n" "$level"
+		printf "\tcasting_time = %s\n" "$cast"
+		printf "\tcasting_range = %s\n" "$range"
+		printf "\tcomponents = %s\n" "$components"
+		printf "\tmaterials = %s\n" "$material"
+		printf "\tduration = %s\n" "$duration"
+		printf "\tritual = %s\n" "$ritual"
+		printf "\tmagic_school = %s\n" "$school"
+		printf "\tclasses = %s\n" "$classes"
+	} >> spells_$letter.py
+done
